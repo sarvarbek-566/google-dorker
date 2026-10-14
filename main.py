@@ -1,62 +1,4 @@
 #!/usr/bin/env python3
-"""
-Google Dorker — a professional OSINT recon tool.
-
-It asks you for ONE thing only: the target site (e.g. example.com).
-Everything else is done automatically.
-
-HOW IT WORKS
-------------
-1. Builds a broad, categorized set of dorks for the target domain
-   (login panels, exposed files, configuration, backups, directory listing,
-   error pages, leaks, etc.).
-2. TRIES to fetch results (two ways):
-     a) Google Custom Search API — if a key is configured (MOST RELIABLE,
-        never blocked). Setup takes 2 minutes — see the notes below.
-     b) SearXNG meta-search — keyless, best-effort. Works on some networks,
-        gets blocked by anti-bot protection on others.
-3. REGARDLESS OF BLOCKING — generates a nice HTML dashboard with direct
-   clickable Google / Bing / DuckDuckGo / Yandex links for every dork and
-   opens it in the browser automatically. The links are opened by YOUR
-   browser, so they are never blocked. This is the honest "100% works"
-   guarantee.
-
-WHY THIS DESIGN?
-----------------
-Google, Bing, DuckDuckGo and other search engines block automated requests
-with JavaScript/anti-bot challenges. A plain script (requests) cannot get
-their results reliably. Therefore:
-  - reliable AUTOMATIC results = Google CSE API (official, free quota).
-  - the always-working path = clickable links opened in your browser.
-
-ENABLING THE GOOGLE CSE API (optional, for automatic results)
--------------------------------------------------------------
-  1. API key:  https://developers.google.com/custom-search/v1/introduction
-               ("Get a Key" button) -> copy the key.
-  2. Search Engine ID (cx):  https://programmablesearchengine.google.com/
-               "Add" -> enable "Search the entire web" -> get the cx (ID).
-  3. Then use it like this (one time):
-       export GOOGLE_API_KEY="AIza..."
-       export GOOGLE_CSE_ID="0123:abcd"
-     or store it in ~/.config/google-dorker/config.json:
-       {"api_key": "AIza...", "cse_id": "0123:abcd"}
-  Free quota: 100 queries per day.
-
-WARNING
--------
-This is a passive recon tool. Use it ONLY on targets you own or are
-authorized to test (bug bounty scope, written contract, labs such as
-TryHackMe/HTB). Dorks usually find publicly indexed pages, but the
-responsibility lies entirely with the user.
-
-USAGE
------
-    python3 main.py
-    python3 main.py -d example.com
-    python3 main.py -d example.com --no-open        # don't open the browser
-    python3 main.py -d example.com -c "Login and admin panels"
-    python3 main.py --list-categories
-"""
 
 import argparse
 import json
@@ -76,7 +18,6 @@ try:
 except ImportError:
     sys.exit("[!] The 'requests' library is required:  pip install requests")
 
-# --- Search link templates (for the clickable report) ----------------------
 ENGINES = {
     "Google": "https://www.google.com/search?q={q}",
     "Bing": "https://www.bing.com/search?q={q}",
@@ -84,7 +25,6 @@ ENGINES = {
     "Yandex": "https://yandex.com/search/?text={q}",
 }
 
-# Public SearXNG instances for the best-effort live fetch (rotated).
 SEARXNG_INSTANCES = [
     "https://searx.be",
     "https://search.inetol.net",
@@ -105,8 +45,6 @@ USER_AGENTS = [
     "(KHTML, like Gecko) Version/17.1 Safari/605.1.15",
 ]
 
-# Category -> (severity, [dork templates]).  {d} is replaced by the domain.
-# severity: "high" | "med" | "info"
 DORKS = {
     "Login and admin panels": ("med", [
         "site:{d} inurl:admin",
@@ -179,7 +117,6 @@ SEV_LABEL = {"high": "HIGH", "med": "MEDIUM", "info": "INFO"}
 
 
 class C:
-    """Terminal colors."""
     H = "\033[95m"; B = "\033[94m"; G = "\033[92m"; Y = "\033[93m"
     R = "\033[91m"; GRAY = "\033[90m"; E = "\033[0m"; BOLD = "\033[1m"
 
@@ -199,11 +136,7 @@ DOMAIN_RE = re.compile(
 )
 
 
-# --------------------------------------------------------------------------
-# Helper functions
-# --------------------------------------------------------------------------
 def normalize_domain(raw: str) -> str:
-    """If a URL or domain is given, extract the clean domain part."""
     d = raw.strip().lower()
     d = re.sub(r"^\w+://", "", d)
     d = d.split("/")[0].split("@")[-1].split(":")[0]
@@ -215,11 +148,7 @@ def engine_links(dork: str) -> dict:
     return {name: tpl.format(q=q) for name, tpl in ENGINES.items()}
 
 
-# --------------------------------------------------------------------------
-# Live results — Google CSE (reliable) and SearXNG (best-effort)
-# --------------------------------------------------------------------------
 def load_cse_credentials():
-    """Find the API key from env / config.json / .env."""
     key = os.environ.get("GOOGLE_API_KEY")
     cx = os.environ.get("GOOGLE_CSE_ID")
     if key and cx:
@@ -249,7 +178,6 @@ def load_cse_credentials():
 
 
 def cse_search(session, api_key, cx, query, limit, timeout):
-    """Search via the Google Custom Search API. Returns (status, urls)."""
     try:
         resp = session.get(
             "https://www.googleapis.com/customsearch/v1",
@@ -271,7 +199,6 @@ def cse_search(session, api_key, cx, query, limit, timeout):
 
 
 def searxng_search(session, instances, query, limit, timeout):
-    """Best-effort SearXNG search. Tries the instances one after another."""
     patterns = [
         re.compile(r'<a[^>]+href="(https?://[^"]+)"[^>]*class="url_header"'),
         re.compile(r'<h3>\s*<a[^>]+href="(https?://[^"]+)"'),
@@ -280,7 +207,6 @@ def searxng_search(session, instances, query, limit, timeout):
     for base in instances:
         headers = {"User-Agent": random.choice(USER_AGENTS),
                    "Accept": "application/json, text/html"}
-        # JSON first
         try:
             r = session.get(f"{base}/search",
                             params={"q": query, "format": "json"},
@@ -294,7 +220,6 @@ def searxng_search(session, instances, query, limit, timeout):
                 return "empty", [], base
         except (requests.RequestException, ValueError):
             pass
-        # Then HTML
         try:
             r = session.get(f"{base}/search", params={"q": query},
                             headers=headers, timeout=timeout)
@@ -315,7 +240,6 @@ def searxng_search(session, instances, query, limit, timeout):
 
 
 def probe_searxng(session, timeout=6):
-    """Quickly check whether SearXNG works (2 instances)."""
     for base in SEARXNG_INSTANCES[:2]:
         st, urls, _ = searxng_search(
             session, [base], "site:wikipedia.org test", 2, timeout)
@@ -324,14 +248,7 @@ def probe_searxng(session, timeout=6):
     return False
 
 
-# --------------------------------------------------------------------------
-# Scanning
-# --------------------------------------------------------------------------
 def run_scan(domain, categories, delay, limit, timeout, mode):
-    """
-    mode: "cse" | "searxng" | "links"
-    Returns a result dict for every dork.
-    """
     session = requests.Session()
     api_key = cx = None
     if mode == "cse":
@@ -400,9 +317,6 @@ def run_scan(domain, categories, delay, limit, timeout, mode):
     return results, mode
 
 
-# --------------------------------------------------------------------------
-# Report
-# --------------------------------------------------------------------------
 def print_summary(domain, results, mode):
     found = [r for r in results if r["status"] == "found"]
     total_urls = sum(len(r["urls"]) for r in found)
@@ -425,12 +339,10 @@ def print_summary(domain, results, mode):
 def save_reports(base, domain, results, mode):
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # --- JSON ---
     base.with_suffix(".json").write_text(json.dumps(
         {"domain": domain, "generated": stamp, "mode": mode,
          "results": results}, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # --- TXT ---
     lines = [f"Google Dork report — {domain}", f"Generated: {stamp}",
              f"Mode: {mode}", "=" * 64]
     for r in results:
@@ -447,7 +359,6 @@ def save_reports(base, domain, results, mode):
     base.with_suffix(".txt").write_text("\n".join(lines) + "\n",
                                         encoding="utf-8")
 
-    # --- HTML dashboard ---
     html_path = base.with_suffix(".html")
     html_path.write_text(render_html(domain, results, mode, stamp),
                          encoding="utf-8")
@@ -594,7 +505,6 @@ function flt(v){{v=v.toLowerCase().trim();
 </script></body></html>"""
 
 
-# --------------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser(
         description="Professional Google dork OSINT scanner.")
@@ -619,7 +529,6 @@ def parse_args():
 
 
 def choose_mode(requested):
-    """In auto mode, pick the best available source."""
     if requested != "auto":
         return requested
     key, cx = load_cse_credentials()
