@@ -55,7 +55,7 @@
 Требуется: **Python 3.8+**
 
 ```bash
-git clone https://github.com/sarvarbek-566/google-dorker.git
+git clone https://github.com/voidsecurity404/google-dorker.git
 cd google-dorker
 pip install -r requirements.txt
 ```
