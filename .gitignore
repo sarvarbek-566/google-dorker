@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+# Skaner yaratgan hisobotlar
+dorks_*.html
+dorks_*.txt
+dorks_*.json
