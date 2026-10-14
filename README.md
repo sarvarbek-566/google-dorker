@@ -1,57 +1,58 @@
 # 🔍 Google Dorker
 
-**Google Dorker** — bitta domen kiritasiz, dastur esa o'zi tayyor *Google dork* so'rovlarini yaratib, chiroyli HTML hisobot beradi. Bu **passive OSINT recon** vositasi: targetga hech qanday to'g'ridan-to'g'ri so'rov yuborilmaydi, faqat qidiruv tizimlarining ommaviy indeksidan foydalaniladi.
+**Google Dorker** — вводите один домен, а программа сама формирует готовые *Google dork*-запросы и создаёт удобный HTML-отчёт. Это инструмент **пассивной OSINT-разведки (recon)**: к цели не отправляется ни одного прямого запроса, используется только публичный индекс поисковых систем.
 
-> ⚠️ **Ogohlantirish:** faqat o'zingizga tegishli yoki yozma ruxsat berilgan targetlarda ishlating (bug bounty scope, shartnoma, TryHackMe/HTB kabi lablar). Mas'uliyat to'liq foydalanuvchida.
+> ⚠️ **Предупреждение:** используйте только на собственных целях или при наличии письменного разрешения (scope bug bounty, договор, лаборатории вроде TryHackMe/HTB). Ответственность полностью лежит на пользователе.
 
 ---
 
-## 📖 Bu nima va nega kerak?
+## 📖 Что это и зачем нужно
 
-**Google dork** — Google'ning maxsus operatorlari (`site:`, `inurl:`, `filetype:`, `intitle:` ...) yordamida oddiy qidiruv bilan topib bo'lmaydigan narsalarni topish usuli. Masalan:
+**Google dork** — это способ находить с помощью специальных операторов Google (`site:`, `inurl:`, `filetype:`, `intitle:` ...) то, что обычным поиском не найти. Например:
 
-| Dork | Nima topadi |
+| Dork | Что находит |
 |------|-------------|
-| `site:example.com inurl:admin` | Admin panel sahifalari |
-| `site:example.com filetype:sql` | Ochiq qolgan database dumplar |
-| `site:example.com intitle:"index of"` | Ochiq papkalar (directory listing) |
-| `site:example.com filetype:env` | Maxfiy konfiguratsiya fayllari |
+| `site:example.com inurl:admin` | Страницы админ-панелей |
+| `site:example.com filetype:sql` | Случайно открытые дампы баз данных |
+| `site:example.com intitle:"index of"` | Открытые каталоги (directory listing) |
+| `site:example.com filetype:env` | Секретные конфигурационные файлы |
 
-Pentester yoki bug bounty ovchisi uchun bu **recon (razvedka)** bosqichining birinchi qadami. Qo'lda yuzlab dork yozib chiqish o'rniga, bu dastur ularni sizning o'rningizga tayyorlaydi.
+Для пентестера или багхантера это первый шаг этапа **разведки**. Вместо того чтобы вручную писать сотни дорков, программа готовит их за вас.
 
-## ✨ Imkoniyatlar
+## ✨ Возможности
 
-- 🎯 **Faqat bitta narsa so'raydi** — target domen (`example.com`).
-- 📂 **11 ta kategoriya, 40+ tayyor dork:** login/admin panellar, directory listing, konfiguratsiya fayllari, database/backup, log fayllar, xatolik sahifalari, API va dev muhitlar, parametrli URL'lar, tashqi saytlardagi sizib chiqishlar (leaks), subdomenlar va h.k.
-- 🚦 **Har bir dorkka xavf darajasi:** `YUQORI` / `O'RTA` / `INFO`.
-- 🌐 **Har bir dork uchun tayyor havolalar** — Google, Bing, DuckDuckGo, Yandex (bir bosishda brauzerda ochiladi).
-- 🤖 **Avtomat natija olish** (ixtiyoriy): Google Custom Search API yoki SearXNG orqali.
-- 📊 **Chiroyli HTML dashboard:** qidiruv filtri, "nusxa olish" tugmasi, dark mode.
-- 💾 **3 xil hisobot:** `.html`, `.txt`, `.json`.
+- 🎯 **Спрашивает только одно** — целевой домен (`example.com`).
+- 📂 **11 категорий, 40+ готовых дорков:** панели входа/админки, directory listing, конфигурационные файлы, базы данных и бэкапы, логи, страницы ошибок, API и dev-окружения, URL с параметрами, утечки на сторонних сайтах, поддомены и др.
+- 🚦 **Уровень риска для каждого дорка:** `HIGH` / `MEDIUM` / `INFO`.
+- 🌐 **Готовые ссылки для каждого дорка** — Google, Bing, DuckDuckGo, Yandex (открываются в браузере в один клик).
+- 🤖 **Автоматическое получение результатов** (опционально): через Google Custom Search API или SearXNG.
+- 📊 **Красивый HTML-дашборд:** фильтр, кнопка «copy», тёмная тема.
+- 💾 **3 формата отчёта:** `.html`, `.txt`, `.json`.
+- 🇬🇧 Интерфейс программы и отчёты — на английском языке.
 
-## ⚙️ Qanday ishlaydi?
+## ⚙️ Как это работает
 
 ```
-Domen kiritiladi
+Вводится домен
       │
       ▼
-Kategoriyalar bo'yicha dorklar yasaladi   (site:example.com inurl:admin ...)
+Формируются дорки по категориям   (site:example.com inurl:admin ...)
       │
       ▼
-Natija olish rejimi avtomat tanlanadi:
-   1) Google CSE API kaliti bor  → avtomat natijalar (eng ishonchli)
-   2) Kalit yo'q, SearXNG ishlaydi → best-effort natijalar
-   3) Ikkalasi ham bloklangan     → faqat clickable havolalar
+Режим получения результатов выбирается автоматически:
+   1) Есть ключ Google CSE API   → автоматические результаты (самый надёжный)
+   2) Ключа нет, SearXNG работает → результаты best-effort
+   3) Всё заблокировано          → только кликабельные ссылки
       │
       ▼
-HTML + TXT + JSON hisobot saqlanadi, HTML brauzerda ochiladi
+Сохраняются HTML + TXT + JSON отчёты, HTML открывается в браузере
 ```
 
-**Nega 3 xil rejim?** Google, Bing va boshqalar avtomatik so'rovlarni anti-bot himoya bilan bloklaydi. Shuning uchun *har doim ishlaydigan* yo'l — dashboarddagi havolalar: ularni **sizning brauzeringiz** ochadi, demak hech qachon bloklanmaydi.
+**Зачем 3 режима?** Google, Bing и другие блокируют автоматические запросы антибот-защитой. Поэтому *всегда работающий* путь — ссылки в дашборде: их открывает **ваш браузер**, а значит, они никогда не блокируются.
 
-## 🚀 O'rnatish
+## 🚀 Установка
 
-Talab: **Python 3.8+**
+Требуется: **Python 3.8+**
 
 ```bash
 git clone https://github.com/sarvarbek-566/google-dorker.git
@@ -59,80 +60,80 @@ cd google-dorker
 pip install -r requirements.txt
 ```
 
-## 🧪 Foydalanish
+## 🧪 Использование
 
 ```bash
-# Interaktiv: dastur o'zi domen so'raydi
+# Интерактивно: программа сама спросит домен
 python3 main.py
 
-# Domenni to'g'ridan-to'g'ri berish
+# Указать домен сразу
 python3 main.py -d example.com
 
-# Brauzerni avtomat ochmaslik
+# Не открывать браузер автоматически
 python3 main.py -d example.com --no-open
 
-# Faqat bitta kategoriya
-python3 main.py -d example.com -c "Login va admin panellar"
+# Только одна категория
+python3 main.py -d example.com -c "Login and admin panels"
 
-# Mavjud kategoriyalar ro'yxati
+# Список доступных категорий
 python3 main.py --list-categories
 ```
 
-### Barcha parametrlar
+### Все параметры
 
-| Parametr | Ma'nosi | Default |
-|----------|---------|---------|
-| `-d`, `--domain` | Target domen | so'raladi |
-| `-c`, `--categories` | Faqat shu kategoriyalar | hammasi |
-| `-o`, `--output` | Hisobot fayl nomi (kengaytmasiz) | `dorks_<domen>` |
+| Параметр | Значение | По умолчанию |
+|----------|----------|--------------|
+| `-d`, `--domain` | Целевой домен | спрашивается |
+| `-c`, `--categories` | Только указанные категории | все |
+| `-o`, `--output` | Имя файла отчёта (без расширения) | `dorks_<домен>` |
 | `--engine` | `auto`, `cse`, `searxng`, `links` | `auto` |
-| `--delay` | Live so'rovlar orasidagi kutish (soniya) | `2` |
-| `--limit` | Har bir dork uchun maksimal natija | `8` |
-| `--timeout` | So'rov timeouti (soniya) | `15` |
-| `--no-open` | HTML'ni brauzerda ochmaslik | o'chiq |
-| `--list-categories` | Kategoriyalarni ko'rsatib chiqish | — |
+| `--delay` | Пауза между live-запросами (секунды) | `2` |
+| `--limit` | Максимум результатов на один дорк | `8` |
+| `--timeout` | Таймаут запроса (секунды) | `15` |
+| `--no-open` | Не открывать HTML в браузере | выкл. |
+| `--list-categories` | Показать категории и выйти | — |
 
-## 🔑 Google CSE API'ni yoqish (ixtiyoriy)
+## 🔑 Включение Google CSE API (опционально)
 
-Natijalarni avtomat olish uchun (bepul kvota: **kuniga 100 so'rov**):
+Для автоматического получения результатов (бесплатная квота: **100 запросов в день**):
 
-1. **API kalit** oling: <https://developers.google.com/custom-search/v1/introduction> → "Get a Key".
-2. **Search Engine ID (cx)** oling: <https://programmablesearchengine.google.com/> → "Add" → *"Search the entire web"* ni yoqing.
-3. Kalitlarni quyidagi usullardan biri bilan bering:
+1. Получите **API key**: <https://developers.google.com/custom-search/v1/introduction> → «Get a Key».
+2. Получите **Search Engine ID (cx)**: <https://programmablesearchengine.google.com/> → «Add» → включите *«Search the entire web»*.
+3. Передайте ключи одним из способов:
 
-   **a) Environment variable:**
+   **a) Переменные окружения:**
    ```bash
    export GOOGLE_API_KEY="AIza..."
    export GOOGLE_CSE_ID="0123:abcd"
    ```
 
-   **b) Config fayl** `~/.config/google-dorker/config.json`:
+   **b) Конфиг-файл** `~/.config/google-dorker/config.json`:
    ```json
    {"api_key": "AIza...", "cse_id": "0123:abcd"}
    ```
 
-   **c) `.env` fayl** (loyiha papkasida):
+   **c) Файл `.env`** (в папке проекта):
    ```
    GOOGLE_API_KEY=AIza...
    GOOGLE_CSE_ID=0123:abcd
    ```
 
-> 🔒 API kalitingizni hech qachon GitHub'ga yuklamang. `.env` fayl `.gitignore`da allaqachon bor.
+> 🔒 Никогда не загружайте API-ключ на GitHub. Файл `.env` уже добавлен в `.gitignore`.
 
-## 📁 Natija fayllari
+## 📁 Файлы результата
 
-Skaner tugagach quyidagilar yaratiladi (masalan `example.com` uchun):
+После сканирования создаются файлы (например, для `example.com`):
 
-| Fayl | Vazifasi |
-|------|----------|
-| `dorks_example_com.html` | Asosiy dashboard — brauzerda ochiladi |
-| `dorks_example_com.txt` | Oddiy matnli hisobot |
-| `dorks_example_com.json` | Boshqa vositalar uchun mashina o'qiydigan format |
+| Файл | Назначение |
+|------|------------|
+| `dorks_example_com.html` | Основной дашборд — открывается в браузере |
+| `dorks_example_com.txt` | Простой текстовый отчёт |
+| `dorks_example_com.json` | Машиночитаемый формат для других инструментов |
 
-## 🛡️ Huquqiy eslatma
+## 🛡️ Юридическое примечание
 
-Bu vosita faqat **ta'lim, mudofaa va ruxsat berilgan xavfsizlik tekshiruvlari** uchun. Dorklar ommaviy indekslangan sahifalarni topadi, lekin topilgan ma'lumotdan ruxsatsiz foydalanish qonunbuzarlikdir. Muallif noto'g'ri ishlatilishi uchun javobgar emas.
+Инструмент предназначен только для **обучения, защиты и разрешённых проверок безопасности**. Дорки находят публично проиндексированные страницы, но несанкционированное использование найденных данных является правонарушением. Автор не несёт ответственности за неправомерное использование.
 
-## 🤝 Hissa qo'shish
+## 🤝 Вклад в проект
 
-Yangi dork kategoriyalari yoki yaxshilanishlar uchun Pull Request yoki Issue oching. Yangi dork qo'shish uchun `main.py` dagi `DORKS` lug'atiga yozuv qo'shish kifoya.
+Для новых категорий дорков или улучшений откройте Pull Request или Issue. Чтобы добавить новый дорк, достаточно добавить запись в словарь `DORKS` в `main.py`.

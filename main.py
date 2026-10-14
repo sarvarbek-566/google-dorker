@@ -1,60 +1,60 @@
 #!/usr/bin/env python3
 """
-Google Dorker — professional OSINT recon vositasi.
+Google Dorker — a professional OSINT recon tool.
 
-Sizdan FAQAT bitta narsa so'raydi: target sayt (masalan example.com).
-Qolgan hamma ishni o'zi qiladi.
+It asks you for ONE thing only: the target site (e.g. example.com).
+Everything else is done automatically.
 
-ISHLASH TARTIBI
----------------
-1. Target domen uchun keng, kategoriyalarga ajratilgan dork to'plamini
-   tayyorlaydi (login panellar, ochiq fayllar, konfiguratsiya, backup,
-   directory listing, xatolik sahifalari, sizib chiqishlar va h.k.).
-2. Natijalarni OLISHGA harakat qiladi (ikki yo'l bilan):
-     a) Google Custom Search API — agar kalit sozlangan bo'lsa (ENG ISHONCHLI,
-        hech qachon bloklanmaydi). Sozlash 2 daqiqa — pastdagi izohga qarang.
-     b) SearXNG meta-qidiruv — kalitsiz, best-effort. Ba'zi tarmoqlarda
-        ishlaydi, ba'zilarida anti-bot himoya tufayli bloklanadi.
-3. BLOKLANISHDAN QAT'I NAZAR — har bir dork uchun to'g'ridan-to'g'ri
-   bosiladigan Google / Bing / DuckDuckGo / Yandex havolalarini o'z ichiga
-   olgan chiroyli HTML dashboard yaratadi va uni brauzerda avtomat ochadi.
-   Havolalarni SIZNING brauzeringiz ochadi — shuning uchun hech qachon
-   bloklanmaydi. Bu "100% ishlaydi" degan halol kafolat.
-
-NEGA SHUNDAY?
+HOW IT WORKS
 ------------
-2026-yilda Google, Bing, DuckDuckGo va boshqa qidiruv tizimlari avtomatik
-so'rovlarni JavaScript/anti-bot challenge bilan bloklaydi. Oddiy skript
-(requests) ularning natijalarini ishonchli ololmaydi. Shuning uchun:
-  - ishonchli AVTOMAT natija = Google CSE API (rasmiy, bepul kvota).
-  - har doim ishlaydigan yo'l = brauzerda ochiladigan clickable havolalar.
+1. Builds a broad, categorized set of dorks for the target domain
+   (login panels, exposed files, configuration, backups, directory listing,
+   error pages, leaks, etc.).
+2. TRIES to fetch results (two ways):
+     a) Google Custom Search API — if a key is configured (MOST RELIABLE,
+        never blocked). Setup takes 2 minutes — see the notes below.
+     b) SearXNG meta-search — keyless, best-effort. Works on some networks,
+        gets blocked by anti-bot protection on others.
+3. REGARDLESS OF BLOCKING — generates a nice HTML dashboard with direct
+   clickable Google / Bing / DuckDuckGo / Yandex links for every dork and
+   opens it in the browser automatically. The links are opened by YOUR
+   browser, so they are never blocked. This is the honest "100% works"
+   guarantee.
 
-GOOGLE CSE API'NI YOQISH (ixtiyoriy, natijalarni avtomat olish uchun)
---------------------------------------------------------------------
-  1. API kalit:  https://developers.google.com/custom-search/v1/introduction
-                 ("Get a Key" tugmasi) → kalitni nusxa oling.
+WHY THIS DESIGN?
+----------------
+Google, Bing, DuckDuckGo and other search engines block automated requests
+with JavaScript/anti-bot challenges. A plain script (requests) cannot get
+their results reliably. Therefore:
+  - reliable AUTOMATIC results = Google CSE API (official, free quota).
+  - the always-working path = clickable links opened in your browser.
+
+ENABLING THE GOOGLE CSE API (optional, for automatic results)
+-------------------------------------------------------------
+  1. API key:  https://developers.google.com/custom-search/v1/introduction
+               ("Get a Key" button) -> copy the key.
   2. Search Engine ID (cx):  https://programmablesearchengine.google.com/
-                 "Add" → "Search the entire web" yoqing → cx (ID) ni oling.
-  3. Keyin quyidagicha ishlating (bir martalik):
+               "Add" -> enable "Search the entire web" -> get the cx (ID).
+  3. Then use it like this (one time):
        export GOOGLE_API_KEY="AIza..."
        export GOOGLE_CSE_ID="0123:abcd"
-     yoki ~/.config/google-dorker/config.json faylida saqlang:
+     or store it in ~/.config/google-dorker/config.json:
        {"api_key": "AIza...", "cse_id": "0123:abcd"}
-  Bepul kvota: kuniga 100 so'rov.
+  Free quota: 100 queries per day.
 
-OGOHLANTIRISH
--------------
-Bu passive recon vositasi. Faqat O'ZINGIZGA tegishli yoki ruxsat berilgan
-targetlarda (bug bounty scope, yozma shartnoma, TryHackMe/HTB kabi lab)
-ishlating. Dorklar odatda ommaviy indekslangan sahifalarni topadi, lekin
-mas'uliyat butunlay foydalanuvchida.
+WARNING
+-------
+This is a passive recon tool. Use it ONLY on targets you own or are
+authorized to test (bug bounty scope, written contract, labs such as
+TryHackMe/HTB). Dorks usually find publicly indexed pages, but the
+responsibility lies entirely with the user.
 
-FOYDALANISH
------------
+USAGE
+-----
     python3 main.py
     python3 main.py -d example.com
-    python3 main.py -d example.com --no-open        # brauzerni ochmaslik
-    python3 main.py -d example.com -c "Login va admin panellar"
+    python3 main.py -d example.com --no-open        # don't open the browser
+    python3 main.py -d example.com -c "Login and admin panels"
     python3 main.py --list-categories
 """
 
@@ -69,14 +69,14 @@ import webbrowser
 from datetime import datetime
 from html import escape, unescape
 from pathlib import Path
-from urllib.parse import quote_plus, unquote, urlparse
+from urllib.parse import quote_plus, urlparse
 
 try:
     import requests
 except ImportError:
-    sys.exit("[!] 'requests' kutubxonasi kerak:  pip install requests")
+    sys.exit("[!] The 'requests' library is required:  pip install requests")
 
-# --- Qidiruv havolasi shablonlari (clickable report uchun) -----------------
+# --- Search link templates (for the clickable report) ----------------------
 ENGINES = {
     "Google": "https://www.google.com/search?q={q}",
     "Bing": "https://www.bing.com/search?q={q}",
@@ -84,7 +84,7 @@ ENGINES = {
     "Yandex": "https://yandex.com/search/?text={q}",
 }
 
-# Best-effort live fetch uchun ommaviy SearXNG instancelari (rotatsiya).
+# Public SearXNG instances for the best-effort live fetch (rotated).
 SEARXNG_INSTANCES = [
     "https://searx.be",
     "https://search.inetol.net",
@@ -105,10 +105,10 @@ USER_AGENTS = [
     "(KHTML, like Gecko) Version/17.1 Safari/605.1.15",
 ]
 
-# Kategoriya -> (severity, [dork shablonlari]).  {d} domen bilan almashtiriladi.
+# Category -> (severity, [dork templates]).  {d} is replaced by the domain.
 # severity: "high" | "med" | "info"
 DORKS = {
-    "Login va admin panellar": ("med", [
+    "Login and admin panels": ("med", [
         "site:{d} inurl:admin",
         "site:{d} inurl:login OR inurl:signin OR inurl:auth",
         'site:{d} intitle:"dashboard" OR intitle:"control panel"',
@@ -116,70 +116,70 @@ DORKS = {
         "site:{d} inurl:phpmyadmin OR inurl:pma",
         "site:{d} inurl:cpanel OR inurl:webmail",
     ]),
-    "Directory listing (ochiq papkalar)": ("high", [
+    "Directory listing (open folders)": ("high", [
         'site:{d} intitle:"index of"',
         'site:{d} intitle:"index of" "parent directory"',
         'site:{d} intitle:"index of" (backup OR admin OR uploads OR private)',
     ]),
-    "Hujjatlar": ("info", [
+    "Documents": ("info", [
         "site:{d} filetype:pdf",
         "site:{d} filetype:doc OR filetype:docx",
         "site:{d} filetype:xls OR filetype:xlsx OR filetype:csv",
         "site:{d} filetype:ppt OR filetype:pptx",
         "site:{d} filetype:txt",
     ]),
-    "Konfiguratsiya va maxfiy fayllar": ("high", [
+    "Configuration and secret files": ("high", [
         "site:{d} filetype:env OR filetype:ini OR filetype:conf OR filetype:cfg",
         "site:{d} filetype:xml OR filetype:yml OR filetype:yaml",
         "site:{d} inurl:.git OR inurl:.svn OR inurl:.env",
         'site:{d} filetype:json intext:"api_key" OR intext:"secret"',
         'site:{d} intext:"BEGIN RSA PRIVATE KEY" OR intext:"BEGIN PRIVATE KEY"',
     ]),
-    "Database va backup": ("high", [
+    "Database and backups": ("high", [
         "site:{d} filetype:sql OR filetype:db OR filetype:sqlite",
         "site:{d} filetype:bak OR filetype:old OR filetype:backup",
         "site:{d} filetype:zip OR filetype:tar OR filetype:gz OR filetype:rar",
         'site:{d} intitle:"index of" (dump OR .sql OR backup)',
     ]),
-    "Log fayllar": ("med", [
+    "Log files": ("med", [
         "site:{d} filetype:log",
         'site:{d} filetype:log intext:"password" OR intext:"error"',
     ]),
-    "Xatolik / stack trace sahifalari": ("med", [
+    "Error / stack trace pages": ("med", [
         'site:{d} intext:"sql syntax near" OR intext:"mysql_fetch"',
         'site:{d} intext:"Warning:" intext:"on line"',
         'site:{d} intext:"Traceback (most recent call last)"',
         'site:{d} intext:"Fatal error" OR intext:"Uncaught exception"',
     ]),
-    "API va dev muhitlar": ("med", [
+    "API and dev environments": ("med", [
         "site:{d} inurl:api OR inurl:swagger OR inurl:graphql",
         "site:{d} inurl:dev OR inurl:test OR inurl:staging OR inurl:uat",
         'site:{d} inurl:wp-json',
         "site:{d} ext:json inurl:api",
     ]),
-    "Parametrli URL'lar (potensial zaifliklar)": ("med", [
+    "Parameterized URLs (potential vulnerabilities)": ("med", [
         "site:{d} inurl:id= OR inurl:page= OR inurl:file=",
         "site:{d} inurl:redirect= OR inurl:url= OR inurl:next= OR inurl:return=",
         "site:{d} inurl:cmd= OR inurl:exec= OR inurl:query=",
     ]),
-    "Tashqi saytlarda sizib chiqish (leaks)": ("high", [
+    "Leaks on third-party sites": ("high", [
         '"{d}" site:pastebin.com',
         '"{d}" site:github.com',
         '"{d}" site:gitlab.com OR site:bitbucket.org',
         '"{d}" site:trello.com OR site:s3.amazonaws.com',
         '"@{d}" site:github.com password OR secret OR api_key',
     ]),
-    "Subdomenlar va hostlar": ("info", [
+    "Subdomains and hosts": ("info", [
         "site:*.{d} -www",
         "site:{d} -inurl:www",
     ]),
 }
 
-SEV_LABEL = {"high": "YUQORI", "med": "O'RTA", "info": "INFO"}
+SEV_LABEL = {"high": "HIGH", "med": "MEDIUM", "info": "INFO"}
 
 
 class C:
-    """Terminal ranglari."""
+    """Terminal colors."""
     H = "\033[95m"; B = "\033[94m"; G = "\033[92m"; Y = "\033[93m"
     R = "\033[91m"; GRAY = "\033[90m"; E = "\033[0m"; BOLD = "\033[1m"
 
@@ -190,7 +190,7 @@ BANNER = rf"""{C.B}{C.BOLD}
 | |  _ / _ \ / _ \ / _` | |/ _ \ | | | |/ _ \| '__| |/ / _ \ '__|
 | |_| | (_) | (_) | (_| | |  __/ | |_| | (_) | |  |   <  __/ |
  \____|\___/ \___/ \__, |_|\___| |____/ \___/|_|  |_|\_\___|_|
-                   |___/        professional OSINT dork skaneri
+                   |___/        professional OSINT dork scanner
 {C.E}"""
 
 DOMAIN_RE = re.compile(
@@ -200,10 +200,10 @@ DOMAIN_RE = re.compile(
 
 
 # --------------------------------------------------------------------------
-# Yordamchi funksiyalar
+# Helper functions
 # --------------------------------------------------------------------------
 def normalize_domain(raw: str) -> str:
-    """URL yoki domen kiritilsa, toza domen qismini ajratib oladi."""
+    """If a URL or domain is given, extract the clean domain part."""
     d = raw.strip().lower()
     d = re.sub(r"^\w+://", "", d)
     d = d.split("/")[0].split("@")[-1].split(":")[0]
@@ -216,10 +216,10 @@ def engine_links(dork: str) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Live natija olish — Google CSE (ishonchli) va SearXNG (best-effort)
+# Live results — Google CSE (reliable) and SearXNG (best-effort)
 # --------------------------------------------------------------------------
 def load_cse_credentials():
-    """API kalitini env / config.json / .env dan topadi."""
+    """Find the API key from env / config.json / .env."""
     key = os.environ.get("GOOGLE_API_KEY")
     cx = os.environ.get("GOOGLE_CSE_ID")
     if key and cx:
@@ -249,7 +249,7 @@ def load_cse_credentials():
 
 
 def cse_search(session, api_key, cx, query, limit, timeout):
-    """Google Custom Search API orqali qidiradi. (status, urls) qaytaradi."""
+    """Search via the Google Custom Search API. Returns (status, urls)."""
     try:
         resp = session.get(
             "https://www.googleapis.com/customsearch/v1",
@@ -271,7 +271,7 @@ def cse_search(session, api_key, cx, query, limit, timeout):
 
 
 def searxng_search(session, instances, query, limit, timeout):
-    """Best-effort SearXNG qidiruvi. Instancelarni navbatma-navbat sinaydi."""
+    """Best-effort SearXNG search. Tries the instances one after another."""
     patterns = [
         re.compile(r'<a[^>]+href="(https?://[^"]+)"[^>]*class="url_header"'),
         re.compile(r'<h3>\s*<a[^>]+href="(https?://[^"]+)"'),
@@ -280,7 +280,7 @@ def searxng_search(session, instances, query, limit, timeout):
     for base in instances:
         headers = {"User-Agent": random.choice(USER_AGENTS),
                    "Accept": "application/json, text/html"}
-        # Avval JSON
+        # JSON first
         try:
             r = session.get(f"{base}/search",
                             params={"q": query, "format": "json"},
@@ -294,7 +294,7 @@ def searxng_search(session, instances, query, limit, timeout):
                 return "empty", [], base
         except (requests.RequestException, ValueError):
             pass
-        # Keyin HTML
+        # Then HTML
         try:
             r = session.get(f"{base}/search", params={"q": query},
                             headers=headers, timeout=timeout)
@@ -315,7 +315,7 @@ def searxng_search(session, instances, query, limit, timeout):
 
 
 def probe_searxng(session, timeout=6):
-    """SearXNG ishlayotganini tez tekshiradi (2 instance)."""
+    """Quickly check whether SearXNG works (2 instances)."""
     for base in SEARXNG_INSTANCES[:2]:
         st, urls, _ = searxng_search(
             session, [base], "site:wikipedia.org test", 2, timeout)
@@ -325,12 +325,12 @@ def probe_searxng(session, timeout=6):
 
 
 # --------------------------------------------------------------------------
-# Skanerlash
+# Scanning
 # --------------------------------------------------------------------------
 def run_scan(domain, categories, delay, limit, timeout, mode):
     """
     mode: "cse" | "searxng" | "links"
-    Har bir dork uchun natija dict qaytaradi.
+    Returns a result dict for every dork.
     """
     session = requests.Session()
     api_key = cx = None
@@ -346,12 +346,12 @@ def run_scan(domain, categories, delay, limit, timeout, mode):
 
     total = len(tasks)
     mode_label = {
-        "cse": "Google Custom Search API (avtomat natijalar)",
-        "searxng": "SearXNG meta-qidiruv (best-effort)",
-        "links": "faqat clickable havolalar (live fetch bloklangan)",
+        "cse": "Google Custom Search API (automatic results)",
+        "searxng": "SearXNG meta-search (best-effort)",
+        "links": "clickable links only (live fetch blocked)",
     }[mode]
-    print(f"{C.G}[+] {domain} uchun {total} ta dork tayyorlandi.{C.E}")
-    print(f"{C.G}[+] Rejim: {mode_label}{C.E}\n")
+    print(f"{C.G}[+] Prepared {total} dorks for {domain}.{C.E}")
+    print(f"{C.G}[+] Mode: {mode_label}{C.E}\n")
 
     results = []
     current_cat = None
@@ -380,50 +380,46 @@ def run_scan(domain, categories, delay, limit, timeout, mode):
 
         if mode in ("cse", "searxng"):
             if status == "found":
-                print(f"{C.G}✔ TOPILDI ({len(urls)}){C.E}")
+                print(f"{C.G}✔ FOUND ({len(urls)}){C.E}")
                 for u in urls:
                     print(f"       {C.B}{u}{C.E}")
             elif status == "empty":
-                print(f"{C.GRAY}✘ topilmadi{C.E}")
+                print(f"{C.GRAY}✘ nothing found{C.E}")
             elif status == "quota":
-                print(f"{C.Y}⚠ kvota tugadi{C.E}")
+                print(f"{C.Y}⚠ quota exhausted{C.E}")
             elif status == "blocked":
-                print(f"{C.Y}⚠ bloklandi{C.E}")
+                print(f"{C.Y}⚠ blocked{C.E}")
             else:
-                print(f"{C.R}⚠ xato{C.E}")
+                print(f"{C.R}⚠ error{C.E}")
             if i < total:
                 time.sleep(delay + random.uniform(0, delay * 0.3))
-        else:
-            # links rejimi: jim, faqat sanaymiz
-            pass
 
     if mode == "links":
-        print(f"{C.G}[+] {total} ta dork uchun clickable havolalar "
-              f"tayyorlandi.{C.E}")
+        print(f"{C.G}[+] Clickable links prepared for {total} dorks.{C.E}")
 
     return results, mode
 
 
 # --------------------------------------------------------------------------
-# Hisobot
+# Report
 # --------------------------------------------------------------------------
 def print_summary(domain, results, mode):
     found = [r for r in results if r["status"] == "found"]
     total_urls = sum(len(r["urls"]) for r in found)
     print(f"\n{C.BOLD}{'=' * 64}{C.E}")
-    print(f"{C.BOLD}  XULOSA — {domain}{C.E}")
+    print(f"{C.BOLD}  SUMMARY — {domain}{C.E}")
     print(f"{C.BOLD}{'=' * 64}{C.E}")
-    print(f"  Jami dork        : {len(results)} ta")
+    print(f"  Total dorks      : {len(results)}")
     if mode in ("cse", "searxng"):
-        print(f"  {C.G}Natija topildi   : {len(found)} ta dork, "
-              f"{total_urls} ta URL{C.E}")
-    print(f"  {C.B}Clickable havola : har bir dork uchun "
-          f"Google/Bing/DDG/Yandex{C.E}")
+        print(f"  {C.G}Results found    : {len(found)} dorks, "
+              f"{total_urls} URLs{C.E}")
+    print(f"  {C.B}Clickable links  : Google/Bing/DDG/Yandex for "
+          f"every dork{C.E}")
     if found:
-        print(f"\n  {C.G}{C.BOLD}Natija topilgan dorklar:{C.E}")
+        print(f"\n  {C.G}{C.BOLD}Dorks with results:{C.E}")
         for r in found:
             print(f"    {C.G}•{C.E} [{r['category']}] "
-                  f"{C.GRAY}{r['dork']}{C.E} → {len(r['urls'])} ta")
+                  f"{C.GRAY}{r['dork']}{C.E} → {len(r['urls'])}")
 
 
 def save_reports(base, domain, results, mode):
@@ -435,17 +431,17 @@ def save_reports(base, domain, results, mode):
          "results": results}, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # --- TXT ---
-    lines = [f"Google Dork hisoboti — {domain}", f"Yaratilgan: {stamp}",
-             f"Rejim: {mode}", "=" * 64]
+    lines = [f"Google Dork report — {domain}", f"Generated: {stamp}",
+             f"Mode: {mode}", "=" * 64]
     for r in results:
         lines.append("")
         lines.append(f"[{SEV_LABEL[r['severity']]}] [{r['category']}] "
                      f"{r['dork']}")
         if r["urls"]:
-            lines.append("  Topilgan natijalar:")
+            lines.append("  Results found:")
             for u in r["urls"]:
                 lines.append(f"    - {u}")
-        lines.append("  Qidiruv havolalari:")
+        lines.append("  Search links:")
         for name, url in r["links"].items():
             lines.append(f"    {name}: {url}")
     base.with_suffix(".txt").write_text("\n".join(lines) + "\n",
@@ -489,30 +485,32 @@ def render_html(domain, results, mode, stamp):
                 f"<li><a href='{escape(u)}' target='_blank' "
                 f"rel='noopener'>{escape(u)}</a></li>" for u in r["urls"])
             result_html = (f"<ul class='res'><li class='res-h'>"
-                           f"✔ {len(r['urls'])} ta natija topildi:</li>"
+                           f"✔ {len(r['urls'])} results found:</li>"
                            f"{items}</ul>")
         rows.append(
             f"<div class='dork' data-text='{dork_safe.lower()}'>"
             f"<div class='dork-top'>{badge}"
             f"<code>{dork_safe}</code>"
             f"<button class='copy' onclick=\"cp(this)\" "
-            f"data-d='{dork_safe}'>nusxa</button></div>"
+            f"data-d='{dork_safe}'>copy</button></div>"
             f"<div class='engs'>{btns}</div>{result_html}</div>")
     if current is not None:
         rows.append("</div>")
 
     mode_note = {
-        "cse": "Natijalar Google Custom Search API orqali avtomat olindi.",
-        "searxng": "Natijalar SearXNG meta-qidiruv orqali olindi (best-effort).",
-        "links": ("Live fetch bu tarmoqda bloklangan — quyidagi havolalarni "
-                  "bosganingizda qidiruv SIZNING brauzeringizda ochiladi "
-                  "va hech qachon bloklanmaydi."),
+        "cse": "Results were fetched automatically via the Google Custom "
+               "Search API.",
+        "searxng": "Results were fetched via SearXNG meta-search "
+                   "(best-effort).",
+        "links": ("Live fetch is blocked on this network — clicking the links "
+                  "below opens the search in YOUR browser and it is never "
+                  "blocked."),
     }[mode]
 
     return f"""<!doctype html>
-<html lang="uz" data-theme="dark"><head><meta charset="utf-8">
+<html lang="en" data-theme="dark"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dork hisoboti — {escape(domain)}</title>
+<title>Dork report — {escape(domain)}</title>
 <style>
 :root{{--bg:#0d1117;--card:#161b22;--card2:#1c2230;--br:#30363d;
 --tx:#c9d1d9;--mut:#8b949e;--acc:#58a6ff;--grn:#3fb950}}
@@ -564,27 +562,27 @@ border-top:1px solid var(--br);padding-top:20px}}
 .hidden{{display:none}}
 </style></head><body><div class="wrap">
 <header>
-<h1>🔍 Dork hisoboti — <span>{escape(domain)}</span></h1>
-<div class="meta">Yaratilgan: {stamp}</div>
+<h1>🔍 Dork report — <span>{escape(domain)}</span></h1>
+<div class="meta">Generated: {stamp}</div>
 </header>
 <div class="stats">
-<div class="stat"><b>{len(results)}</b><span>jami dork</span></div>
-<div class="stat"><b>{len(DORKS)}</b><span>kategoriya</span></div>
-<div class="stat"><b>{total_urls}</b><span>topilgan URL</span></div>
+<div class="stat"><b>{len(results)}</b><span>total dorks</span></div>
+<div class="stat"><b>{len(DORKS)}</b><span>categories</span></div>
+<div class="stat"><b>{total_urls}</b><span>URLs found</span></div>
 </div>
 <div class="note">{escape(mode_note)}</div>
 <div class="note" style="border-left-color:var(--grn)">
-⚠️ Faqat ruxsat berilgan targetlarda ishlating (bug bounty scope, shartnoma,
-lab). Har bir qatordagi tugmani bosib qidiruvni brauzerda oching.</div>
-<input id="filter" type="text" placeholder="Dorklarni filtrlash... (masalan: filetype, admin, .env)"
+⚠️ Use only on authorized targets (bug bounty scope, contract, lab).
+Click the buttons on each row to open the search in your browser.</div>
+<input id="filter" type="text" placeholder="Filter dorks... (e.g. filetype, admin, .env)"
 oninput="flt(this.value)">
 {''.join(rows)}
-<footer>Google Dorker — professional OSINT recon vositasi.<br>
-Havolalarni brauzeringiz ochadi, shuning uchun hech qachon bloklanmaydi.</footer>
+<footer>Google Dorker — professional OSINT recon tool.<br>
+The links are opened by your browser, so they are never blocked.</footer>
 </div>
 <script>
 function cp(b){{navigator.clipboard.writeText(b.dataset.d).then(()=>{{
- const t=b.textContent;b.textContent='✓ nusxalandi';
+ const t=b.textContent;b.textContent='✓ copied';
  setTimeout(()=>b.textContent=t,1200);}});}}
 function flt(v){{v=v.toLowerCase().trim();
  document.querySelectorAll('.dork').forEach(d=>{{
@@ -599,42 +597,42 @@ function flt(v){{v=v.toLowerCase().trim();
 # --------------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Professional Google dork OSINT skaneri.")
-    p.add_argument("-d", "--domain", help="Target domen (masalan: example.com)")
+        description="Professional Google dork OSINT scanner.")
+    p.add_argument("-d", "--domain", help="Target domain (e.g. example.com)")
     p.add_argument("-c", "--categories", nargs="+",
-                   help="Faqat shu kategoriyalar (default: hammasi)")
+                   help="Only these categories (default: all)")
     p.add_argument("-o", "--output", default=None,
-                   help="Hisobot fayllari nomi (kengaytmasiz)")
+                   help="Report file name (without extension)")
     p.add_argument("--delay", type=float, default=2.0,
-                   help="Live so'rovlar orasidagi kutish, soniya (default: 2)")
+                   help="Delay between live requests, seconds (default: 2)")
     p.add_argument("--limit", type=int, default=8,
-                   help="Har bir dork uchun maksimal natija (default: 8)")
+                   help="Max results per dork (default: 8)")
     p.add_argument("--timeout", type=int, default=15,
-                   help="So'rov timeout, soniya (default: 15)")
+                   help="Request timeout, seconds (default: 15)")
     p.add_argument("--engine", choices=["auto", "cse", "searxng", "links"],
-                   default="auto", help="Natija manbasi (default: auto)")
+                   default="auto", help="Result source (default: auto)")
     p.add_argument("--no-open", action="store_true",
-                   help="HTML hisobotni brauzerda ochmaslik")
+                   help="Don't open the HTML report in the browser")
     p.add_argument("--list-categories", action="store_true",
-                   help="Mavjud kategoriyalarni ko'rsatish va chiqish")
+                   help="Show available categories and exit")
     return p.parse_args()
 
 
 def choose_mode(requested):
-    """auto rejimda eng yaxshi mavjud manbani tanlaydi."""
+    """In auto mode, pick the best available source."""
     if requested != "auto":
         return requested
     key, cx = load_cse_credentials()
     if key and cx:
-        print(f"{C.G}[+] Google CSE kaliti topildi — avtomat natijalar "
-              f"rejimi.{C.E}")
+        print(f"{C.G}[+] Google CSE key found — automatic results "
+              f"mode.{C.E}")
         return "cse"
-    print(f"{C.GRAY}[*] Google CSE kaliti yo'q — SearXNG tekshirilmoqda...{C.E}")
+    print(f"{C.GRAY}[*] No Google CSE key — checking SearXNG...{C.E}")
     if probe_searxng(requests.Session()):
-        print(f"{C.G}[+] SearXNG ishlayapti — best-effort natija rejimi.{C.E}")
+        print(f"{C.G}[+] SearXNG is working — best-effort results mode.{C.E}")
         return "searxng"
-    print(f"{C.Y}[!] Live fetch bu tarmoqda bloklangan. Clickable havolalar "
-          f"rejimiga o'tildi (har doim ishlaydi).{C.E}")
+    print(f"{C.Y}[!] Live fetch is blocked on this network. Switched to "
+          f"clickable links mode (always works).{C.E}")
     return "links"
 
 
@@ -643,27 +641,27 @@ def main():
     print(BANNER)
 
     if args.list_categories:
-        print(f"{C.Y}Mavjud kategoriyalar:{C.E}")
+        print(f"{C.Y}Available categories:{C.E}")
         for cat, (sev, templates) in DORKS.items():
-            print(f"  [{SEV_LABEL[sev]:5}] {cat}  ({len(templates)} dork)")
+            print(f"  [{SEV_LABEL[sev]:6}] {cat}  ({len(templates)} dorks)")
         return
 
     raw = args.domain or input(
-        f"{C.Y}Target sayt (masalan example.com): {C.E}")
+        f"{C.Y}Target site (e.g. example.com): {C.E}")
     domain = normalize_domain(raw)
     if not DOMAIN_RE.match(domain):
-        print(f"{C.R}[!] '{raw}' to'g'ri domenga o'xshamaydi.{C.E}")
+        print(f"{C.R}[!] '{raw}' doesn't look like a valid domain.{C.E}")
         sys.exit(1)
 
     if args.categories:
-        noma = [c for c in args.categories if c not in DORKS]
-        if noma:
-            print(f"{C.R}[!] Noma'lum kategoriya: {', '.join(noma)}{C.E}")
-            print(f"    Ro'yxat: python3 main.py --list-categories")
+        unknown = [c for c in args.categories if c not in DORKS]
+        if unknown:
+            print(f"{C.R}[!] Unknown category: {', '.join(unknown)}{C.E}")
+            print(f"    List: python3 main.py --list-categories")
             sys.exit(1)
 
-    print(f"{C.R}{C.BOLD}[!] Faqat ruxsat berilgan targetlarda ishlating "
-          f"(bug bounty scope, shartnoma, lab).{C.E}\n")
+    print(f"{C.R}{C.BOLD}[!] Use only on authorized targets "
+          f"(bug bounty scope, contract, lab).{C.E}\n")
 
     mode = choose_mode(args.engine)
     print()
@@ -673,28 +671,28 @@ def main():
 
     base = Path(args.output or f"dorks_{domain.replace('.', '_')}")
     txt, html_path, js = save_reports(base, domain, results, mode)
-    print(f"\n{C.G}[+] Hisobot saqlandi:{C.E}")
-    print(f"    {html_path}  {C.GRAY}(asosiy — brauzerda ochiladi){C.E}")
+    print(f"\n{C.G}[+] Report saved:{C.E}")
+    print(f"    {html_path}  {C.GRAY}(main — opens in the browser){C.E}")
     print(f"    {txt}")
     print(f"    {js}")
 
     if not args.no_open:
         try:
             webbrowser.open(f"file://{html_path.resolve()}")
-            print(f"\n{C.G}[+] Hisobot brauzerda ochildi. Dork tugmalarini "
-                  f"bosib qidiruvni boshlang.{C.E}")
+            print(f"\n{C.G}[+] Report opened in the browser. Click the dork "
+                  f"buttons to start searching.{C.E}")
         except Exception:
-            print(f"\n{C.Y}[*] Brauzerni avtomat ochib bo'lmadi. Qo'lda oching: "
-                  f"{html_path}{C.E}")
+            print(f"\n{C.Y}[*] Couldn't open the browser automatically. "
+                  f"Open manually: {html_path}{C.E}")
 
     if mode == "links":
-        print(f"\n{C.GRAY}[i] Natijalarni AVTOMAT olish uchun Google CSE "
-              f"API'ni yoqing — main.py boshidagi izohga qarang.{C.E}")
+        print(f"\n{C.GRAY}[i] To fetch results AUTOMATICALLY, enable the "
+              f"Google CSE API — see the notes at the top of main.py.{C.E}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n{C.R}To'xtatildi.{C.E}")
+        print(f"\n{C.R}Interrupted.{C.E}")
         sys.exit(130)
